@@ -1,0 +1,8 @@
+# .pylintr
+
+[TYPECHECK]
+#
+# Click mutates function signatures:
+#   see https://click.palletsprojects.com/en/8.1.x/
+#
+signature-mutators=click.decorators.option
