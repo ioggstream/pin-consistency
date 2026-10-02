@@ -1,0 +1,5 @@
+# prek hash-pinned for linux amd64 only (manylinux x86_64 wheel).
+# Install with:
+#   pip install --require-hashes --only-binary=:all: -r .github/prek-requirements.txt
+prek==0.5.3 \
+    --hash=sha256:a863379a2668c4ef079d820ffd5b14073145380dfbe0e70fef498dc73c568f86

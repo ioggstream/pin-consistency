@@ -1,0 +1,8 @@
+- id: pin-consistency
+  name: pin-consistency
+  description: Check that container images and GitHub Actions are sha-pinned consistently.
+  entry: pin-consistency
+  language: python
+  pass_filenames: false
+  always_run: true
+  types_or: [dockerfile, yaml]

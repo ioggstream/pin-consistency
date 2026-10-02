@@ -1,0 +1,3 @@
+image: "python@sha256:2222222222222222222222222222222222222222222222222222222222222222" # 3.13.15 # noqa: pin-consistency
+steps:
+- uses: "o/r@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" # noqa: pin-consistency

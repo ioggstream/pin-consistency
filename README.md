@@ -1,20 +1,23 @@
-# Python Cookiecutter repository
+# Pre-commit hook to ensure pin consistency.
 
-Python template repository including boilerplate workflows and CI.
+This hook ensures that container images,
+pre-commit hooks and github actions are consistently pinned to
+the same version across the repository.
 
-```bash
-.bandit.yaml
-.pre-commit-config.yaml
-.github
-└── workflows
-```
+## Adoption in each repository
 
-## Creating a new project
+1. Add to `.pre-commit-config.yaml`:
 
-The name of a new project should be descriptive and short.
-The repository name should be in [kebab-case](https://it.wikipedia.org/wiki/Kebab_case), string, e.g., `python-cookiecutter`,
-`api-onboarding`.
-Avoid CamelCase or underscores: you can use them for OOP classes or properties.
+   ```yaml
+   - repo: <hook-repo-url>
+     rev: <full commit sha> # vX.Y.Z
+     hooks:
+     - id: pin-consistency
+     - id: pin-consistency
+       name: pin-consistency (verify)
+       args: [--verify]
+       stages: [pre-push]
+   ```
 
 ## Contributing
 
@@ -28,25 +31,13 @@ Please, see [CONTRIBUTING.md](CONTRIBUTING.md) for more details on:
 You can create new projects starting from this repository,
 so you can use a consistent CI and checks for different projects.
 
-Besides all the explanations in the [CONTRIBUTING.md](CONTRIBUTING.md) file, you can use the docker-compose file
-(e.g. if you prefer to use docker instead of installing the tools locally)
+Besides all the explanations in the [CONTRIBUTING.md](CONTRIBUTING.md) file,
+containerized tests are based on [act](https://github.com/nektos/act).
+
+Update the [.actrc](.actrc) file with your specific constraints,
+e.g. maximum resource usage, user and group ids, ..;
+then run:
 
 ```bash
-docker-compose run pre-commit
+act
 ```
-
-## Testing github actions
-
-Tune the Github pipelines in [.github/workflows](.github/workflows/).
-
-To speed up the development, you can test the pipeline with [act](https://github.com/nektos/act).
-Installing `act` is beyond the scope of this document.
-
-To test the pipeline locally and ensure that secrets (e.g., service accounts and other credentials)
-are correctly configured, use:
-
- ```bash
- # Run a specific job in the pipeline
- act -j test -s CI_API_TOKEN="$(cat gh-ci.json)" \
-      -s CI_ACCOUNT=my-secret-account
- ```

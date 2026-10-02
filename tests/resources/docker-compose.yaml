@@ -1,0 +1,3 @@
+services:
+  a:
+    image: redis:7

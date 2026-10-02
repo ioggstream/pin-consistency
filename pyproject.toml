@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pin-consistency"
+version = "0.1.0"
+description = "Check that container images and GitHub Actions are sha-pinned consistently."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+pin-consistency = "pin_consistency.check:main"
+
+# Test-only; the hook itself uses the standard library and does not require uv.
+[dependency-groups]
+dev = ["pytest==9.1.1"]
+# CI only: runs the pre-commit hooks (lint.yml, sast.yml).
+ci = ["prek==0.5.3"]
+
+[tool.uv]
+# Cooldown: ignore releases younger than 7 days.
+exclude-newer = "7 days"
+environments = [
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
+
+[tool.setuptools]
+packages = ["pin_consistency"]
+
+[tool.ruff.lint]
+extend-select = ["S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]

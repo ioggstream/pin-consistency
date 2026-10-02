@@ -1,47 +1,115 @@
-# This is a basic workflow to help you get started with Actions
+#
+# Dependency audit (ADR 0002, ADR 0004).
+#   Same image digest and flags as the local osv-scanner hooks,
+#   which prek-pre-push skips (no Docker socket in its container).
+#
+name: osv-scanner
 
-name: "security-bandit"
-
-# Controls when the action will run. Triggers the workflow on push or pull request
-# events but only for the master branch
 on:
   push:
-    branches: [ "main" ]
-    paths-ignore:
-      - "ISSUE_TEMPLATE/**"
   pull_request:
-    branches: [ "main" ]
-    paths-ignore:
-      - "ISSUE_TEMPLATE/**"
+  # Re-audit unchanged lockfiles.
+  schedule:
+    - cron: "23 5 * * *"
 
-permissions: read-all
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  pre-push:
     runs-on: ubuntu-latest
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
+    timeout-minutes: 5
+    env:
+      # Absolute path writable by any uid, both under act and on GitHub.
+      PREK_HOME: /tmp/prek
     steps:
-    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with:
+          # Align with the uv-pre-commit rev in .pre-commit-config.yaml.
+          version: "0.10.3"
+          enable-cache: false
+      # prek is pinned in the `ci` dependency group of pyproject.toml (hashes in uv.lock).
+      # A venv outside the workspace avoids PEP 668 (externally-managed python, e.g. in act images).
+      - name: Install prek
+        env:
+          UV_PROJECT_ENVIRONMENT: /tmp/ci-venv
+        run: uv sync --locked --only-group ci
+      # ADR 0002: CI reruns the hooks of both stages.
+      # Skipped: docker hooks (no Docker socket here), run by osv-scanner.yml.
+      - name: Run prek (pre-push)
+        if: ${{ !cancelled() }}
+        env:
+          SKIP: osv-scanner,osv-scanner-sarif,trufflehog
+        run: /tmp/ci-venv/bin/prek run -vvv --all-files --hook-stage pre-push
 
-  super-sast:
+      # Store (expiring) logs on failure.
+      # Retrieve artifacts via `gh run download`.
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0
+        if: failure()
+        with:
+          name: pre-push.log
+          path: /tmp/prek/pre-push.log
+          if-no-files-found: ignore
+          retention-days: 5
+
+  trufflehog:
+    # Scans push/PR commit ranges; schedule scans full history.
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    permissions:
+      contents: read
     steps:
-    - uses: actions/checkout@v3
-    - name: Test
-      run: |
-        echo UID=$(id -u) >> .env
-        docker run --rm --user=$(id -u) \
-          -v $PWD:/code \
-          -w /code \
-          -e MAVEN_OPTS=" -ntp " \
-          -e RUN_OWASP_DEPENDENCY_CHECK=false \
-          -e RUN_SPOTBUGS_CHECK=false \
-          -e RUN_SPOTLESS_CHECK=false \
-          -e RUN_SPOTLESS_APPLY=true \
-          -e HOME=/tmp \
-          -e USER=nobody \
-          -e BANDIT_CONFIG_FILE=/code/.bandit.yaml \
-          ghcr.io/par-tec/super-sast:latest
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: trufflesecurity/trufflehog@6961f2bace57ab32b23b3ba40f8f420f6bc7e004 # v3.93.3
+        with:
+          # Same image digest as the local hook.
+          version: 3.93.3@sha256:06c1f230512cbb694954716fa5e0adbfb95809c7bfb5a50c25110847417b69db
+          extra_args: --results=verified,unknown
+
+  osv-scanner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The lockfile is fixed (uv.lock, as in the local osv-scanner hooks):
+      #   no glob, so no shell expansion of file names d3f:T1059.004.
+      # `docker://` runs the image entrypoint (/osv-scanner)
+      #   with the workspace as working directory.
+      - name: Run osv-scanner (sarif)
+        # TODO: The SARIF run never fails the job: the table run decides the outcome.
+        continue-on-error: true
+        uses: docker://ghcr.io/google/osv-scanner@sha256:afd838850ac1a0fcc15ff4a041dc9ba11123c3f0d2666217a5f0fcf9222b55fa
+        with:
+          args: >-
+            scan source --config=osv-scanner.toml --verbosity=error
+            --format=sarif --output-file=osv-scanner.sarif
+            -L uv.lock
+
+      - name: Run osv-scanner
+        uses: docker://ghcr.io/google/osv-scanner@sha256:afd838850ac1a0fcc15ff4a041dc9ba11123c3f0d2666217a5f0fcf9222b55fa
+        with:
+          args: >-
+            scan source --config=osv-scanner.toml --verbosity=error
+            -L uv.lock
+
+      # Retrieve via `gh run download`.
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        if: always()
+        with:
+          name: osv-scanner.sarif
+          path: osv-scanner.sarif
+          retention-days: 30

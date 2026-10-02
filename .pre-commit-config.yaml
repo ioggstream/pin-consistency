@@ -6,59 +6,182 @@
 #
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
+#
+# Important: MUST pin docker images and pre-commit hooks to specific digests to ensure reproducibility and security.
+# The pin-consistency hook below checks that images are digest-pinned (ADR 0002).
+default_stages:
+  - pre-commit
+  - manual
+  - pre-push
+default_install_hook_types:
+  - pre-commit
+  - pre-push
+default_language_version:
+  python: python3.12
+#
+# Hooks.
+#
 repos:
--   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
-    hooks:
-    -   id: trailing-whitespace
-    -   id: end-of-file-fixer
-    -   id: check-xml
-    -   id: detect-private-key
-    -   id: check-yaml
-        args: [--allow-multiple-documents]
-    -   id: check-added-large-files
-- repo: https://github.com/myint/autoflake
-  rev: v2.3.1
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
   hooks:
-    - id: autoflake
-      args:
-        - --in-place
-        - --remove-unused-variables
-        - --remove-all-unused-imports
--   repo: https://github.com/psf/black
-    rev: 24.10.0
-    hooks:
-    -   id: black
-- repo: https://github.com/pycqa/isort
-  rev: 5.13.2
+  # Manage spaces.
+  - id: trailing-whitespace
+  - id: end-of-file-fixer
+  - id: check-added-large-files
+  - id: check-symlinks
+  - id: mixed-line-ending
+    args: [--fix=lf]
+  # Check file syntax/format
+  - id: check-xml
+  - id: check-json
+  - id: check-yaml
+    args: [--allow-multiple-documents]
+  # Security checks.
+  - id: detect-private-key
+  - id: detect-aws-credentials
+    args:
+    # See https://github.com/pre-commit/pre-commit-hooks/issues/174
+    - --allow-missing-credentials
+#
+# Python linters.
+#
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  # Ruff version.
+  rev: a27a2e47c7751b639d2b5badf0ef6ff11fee893f # v0.15.4
   hooks:
-    - id: isort
-      name: isort (python)
-      # Use black profile for isort to avoid conflicts
-      #   see https://github.com/PyCQA/isort/issues/1518
-      args: ["--profile", "black"]
-    - id: isort
-      name: isort (cython)
-      types: [cython]
-    - id: isort
-      name: isort (pyi)
-      types: [pyi]
-- repo: https://github.com/PyCQA/flake8
-  rev: 7.1.1
+  # Run the linter, including the flake8-bandit (S) security rules
+  #   selected in pyproject.toml.
+  - id: ruff
+    args: [--fix]
+  - # Run the formatter.
+    id: ruff-format
+#
+# Lockfile: pyproject.toml -> uv.lock (hashed, universal).
+#
+# pyproject.toml holds the direct dependencies (the source of truth);
+#   the installed hook has none: it uses the Python standard library only.
+# uv.lock is generated: do NOT edit it by hand.
+#   The cooldown is `[tool.uv] exclude-newer` in pyproject.toml.
+#
+#   Reviewed security-fix: add the package to
+#   `[tool.uv] exclude-newer-package` in pyproject.toml only,
+#   and justify it in the commit message.
+#
+- repo: https://github.com/astral-sh/uv-pre-commit
+  rev: 1bd9266921fbea6649150af7a0e9206ab3cd5a63 # 0.10.3
   hooks:
-  - id: flake8
-- repo: https://github.com/PyCQA/bandit
-  rev: 1.7.10
+  - id: uv-lock
+
+#
+# Security linters.
+#
+- repo: https://github.com/zizmorcore/zizmor-pre-commit
+  rev: b546b77c44c466a54a42af5499dcc0dcc1a3193f # v1.22.0
   hooks:
-    - id: bandit
-      name: bandit
-      args: ["-c", ".bandit.yaml"]
-      description: 'Bandit is a tool for finding common security issues in Python code'
-      entry: bandit
-      language: python
-      language_version: python3
-      types: [python]
-- repo: https://github.com/Lucas-C/pre-commit-hooks-safety
-  rev: v1.3.3
+    - id: zizmor
+- repo: https://github.com/bridgecrewio/checkov.git
+  rev: b2a2b8c70a979ba693ee4917bbdc3faca086e357 # 3.2.507
   hooks:
-    - id: python-safety-dependencies-check
+  - id: checkov
+    stages: ["pre-push"]
+    entry: >-
+      checkov
+        -d .
+        --skip-path tests/resources
+    pass_filenames: false
+    always_run: true
+  - id: checkov_secrets
+    stages: ["pre-push"]
+    exclude: ^tests/resources/
+    always_run: true
+#
+# Local repository hooks running via docker:
+#
+# - digest-pinned images;
+# - read-only repo mount;
+# - unprivileged user;
+#
+# Containers may access network to retrieve vulnerability databases.
+# These checks:
+#
+# - are only run at pre-push, not pre-commit;
+# - github executes them via specific actions, so you need to align
+#   the configuration/pins with the GitHub Actions workflow.
+#
+- repo: local
+  hooks:
+  #
+  # Dependency audit.
+  #
+  - &osv-scanner
+    id: osv-scanner
+    name: osv-scanner v2.6.0
+    stages: ["pre-push"]
+    entry: bash -c 'docker run --rm --cpus 2 --user "$(id -u):$(id -g)" --read-only
+      -v "$(pwd):/src:ro" --workdir /src
+      ghcr.io/google/osv-scanner@sha256:afd838850ac1a0fcc15ff4a041dc9ba11123c3f0d2666217a5f0fcf9222b55fa
+      scan source --config=osv-scanner.toml --verbosity=error "$@"' --
+    language: system
+    args: &osv-scanner-lockfiles
+    - -L
+    - uv.lock
+    pass_filenames: false
+    always_run: true
+    require_serial: true
+  # Same scan as SARIF. The repo is mounted read-only,
+  #   so the report goes to stdout and the host writes the file.
+  #   This file is not commited to the repository because the official
+  #   value is the one computed via the GitHub Action.
+  - <<: *osv-scanner
+    id: osv-scanner-sarif
+    name: osv-scanner v2.6.0 (sarif)
+    stages: ["pre-push"]
+    entry: bash -c 'docker run --rm --cpus 2 --user "$(id -u):$(id -g)" --read-only
+      -v "$(pwd):/src:ro" --workdir /src
+      ghcr.io/google/osv-scanner@sha256:afd838850ac1a0fcc15ff4a041dc9ba11123c3f0d2666217a5f0fcf9222b55fa
+      scan source --config=osv-scanner.toml --verbosity=error --format=sarif "$@"
+      > osv-scanner.sarif' --
+    args: *osv-scanner-lockfiles
+#
+# Pin consistency: this repository's own hook, run from the working tree.
+#   tests/resources holds deliberately unpinned samples used by the tests.
+#
+- repo: local
+  hooks:
+  - id: pin-consistency
+    name: pin-consistency
+    entry: python -m pin_consistency.check
+    language: system
+    types_or: [dockerfile, yaml]
+    exclude: ^tests/resources/
+  - id: pin-consistency-verify
+    name: pin-consistency (verify)
+    entry: python -m pin_consistency.check --verify
+    language: system
+    stages: ["pre-push"]
+    types_or: [dockerfile, yaml]
+    exclude: ^tests/resources/
+#
+# Secret scanner: this is slow, so it's run at the end.
+#
+- repo: local
+  hooks:
+  - id: trufflehog
+    name: TruffleHog v3.93.3
+    stages: ["pre-push"]
+    description: Detect secrets in your data.
+    # HOME=/tmp: the non-root uid has no home, so git falls back to //.gitconfig (not writable).
+    # --no-update: the image is digest-pinned; the self-updater cannot replace the binary as non-root.
+    entry: bash -c 'docker run --cpus 2 --rm -v "$(pwd):/workdir:ro" -i  --user "$(id -u):$(id -g)"
+      -e HOME=/tmp
+      docker.io/trufflesecurity/trufflehog@sha256:06c1f230512cbb694954716fa5e0adbfb95809c7bfb5a50c25110847417b69db git file:///workdir
+      --no-update --branch HEAD
+      --results=verified,unknown --fail'
+    language: system
+    # The container scans the whole git history, so filenames are irrelevant.
+    # Without these, pre-commit batches the file list across all cores and
+    # spawns one container per batch (16 on a 16-core machine).
+    pass_filenames: false
+    always_run: true
+    require_serial: true

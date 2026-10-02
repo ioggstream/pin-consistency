@@ -1,0 +1,30 @@
+#
+# This is the https://github.com/nektos/act configuration file,
+#  that pins the act container image.
+#
+# Remove the --help option and set the user accordingly to your local user/group
+#   $ echo "--var ACT_CONTAINER_OPTIONS=--user $(id -u):$(id -g)" >> .actrc
+#
+# --help
+-P ubuntu-latest=docker.io/catthehacker/ubuntu:act-latest@sha256:c58e2b364da03b0c804c7d660f2ecbedf2f221a382b9baa0b344b0144780ff43
+--bind
+--action-offline-mode
+--container-architecture linux/amd64
+#
+# The --reuse and --rm=false options reuse the same container
+#   for all jobs: while this is faster, it reduces isolation
+#   when running multiple jobs, or when one container is created
+#   with a different setup (e.g., volumes, ..) so only enable
+#   it if you are sure that there are no side effects, and
+#   comment if tests fails: recreating the container may
+#   fix the issue.
+#
+# --reuse
+# --rm=false
+# act splits each line at the first space: put a space after the flag name.
+# --container-options applies to jobs without a `container:` key;
+#   jobs with it read `options: ${{ vars.ACT_CONTAINER_OPTIONS }}`.
+--container-options --user 1000:1000
+--var ACT_CONTAINER_OPTIONS=--user 1000:1000 --memory=2g
+# uid 1000 has no home in the job images;
+--env HOME=/tmp

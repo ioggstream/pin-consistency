@@ -1,0 +1,13 @@
+
+steps:
+  - uses: actions/checkout@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa # v4.1.0
+  - uses: docker://alpine@sha256:1111111111111111111111111111111111111111111111111111111111111111 # 3.20
+  - uses: ./local
+  - uses: org/tool/sub@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  # v1
+    with:
+      version: 3.93.3@sha256:2222222222222222222222222222222222222222222222222222222222222222
+container: python:3.9
+jobs:
+  x:
+    container:
+      image: ghcr.io/o/i@sha256:1111111111111111111111111111111111111111111111111111111111111111 # 1.0

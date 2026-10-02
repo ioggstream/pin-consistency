@@ -1,0 +1,10 @@
+
+repos:
+- repo: https://github.com/o/r
+  rev: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa # v1.0.0
+- repo: https://github.com/o/s.git
+  rev: v2
+- repo: local
+  hooks:
+  - id: x
+    entry: docker.io/library/alpine:3.20@sha256:1111111111111111111111111111111111111111111111111111111111111111 sh

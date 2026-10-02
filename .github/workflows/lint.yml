@@ -1,32 +1,131 @@
-# Run the SuperLinter action with some custom setup.
-
-name: Lint
+#
+# Pre-commit hooks workflow for the repository.
+#   Run locally via:
+#
+#   act -j osv-scanner  --bind --action-offline-mode   --var ACT_CONTAINER_OPTIONS="--user $(id -u):$(id -g)"
+#
+#   Prek is a pre-commit alternative, used by fastapi and uv:
+#   see <https://github.com/fastapi/fastapi/blob/master/.github/workflows/pre-commit.yml>
+#
+name: lint
 
 on:
   push:
-    branches: ["main"]
+    branches:
+    - main
   pull_request:
-    branches: [ "main" ]
+    branches:
+    - main
+  # Re-audit unchanged lockfiles.
+  schedule:
+    - cron: "17 5 * * *"
 
-  # Allows you to run this workflow manually from the Actions tab
-  workflow_dispatch:
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  lint:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft
+      == false }}
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
-
+    timeout-minutes: 5
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v2
+    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        fetch-depth: 0
+        # Don't persist credentials to prevent credentials to be leaked on artifacts.
+        persist-credentials: false
 
-      - name: Super-Linter
-        uses: github/super-linter@v3.15.5
+    - name: Super-Linter
+      uses: super-linter/super-linter/slim@61abc07d755095a68f4987d1c2c3d1d64408f1f9  # v8.5.0
+      env:
+        # act's synthetic event has no repository.default_branch.
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+        # Either disable MULTI_STATUS or pass the GITHUB_TOKEN.
+        MULTI_STATUS: false
+        ENABLE_GITHUB_PULL_REQUEST_SUMMARY_COMMENT: false
+        # GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        VALIDATE_MARKDOWN: false
+        VALIDATE_MARKDOWN_PRETTIER: false
+        #
+        # Python validation is delegated to pre-commit.
+        #
+        VALIDATE_PYTHON_ISORT: false
+        VALIDATE_XML: false
+        VALIDATE_PYTHON_RUFF: false
+        VALIDATE_PYTHON_RUFF_FORMAT: false
+        VALIDATE_PYTHON_BLACK: false
+        VALIDATE_PYTHON_BLACK_FORMAT: false
+        VALIDATE_PYTHON_PYLINT: false
+        VALIDATE_PYTHON_FLAKE8: false
+        VALIDATE_PYTHON_MYPY: false
+        #
+        # YAML validation is delegated to pre-commit.
+        #
+        VALIDATE_YAML: false
+        VALIDATE_YAML_PRETTIER: false
+        # VALIDATE_OPENAPI: false
+        OPENAPI_CONFIG_FILE: .spectral/rulesets/.openapirc.yml
+        VALIDATE_NATURAL_LANGUAGE: false
+        #
+        # JS/CSS delegated to eslint.
+        #
+        VALIDATE_BIOME_FORMAT: false
+        VALIDATE_BIOME_LINT: false
+        VALIDATE_CSS: false
+        VALIDATE_JAVASCRIPT_ES: false
+        VALIDATE_JAVASCRIPT_STANDARD: false
+        VALIDATE_JAVASCRIPT_PRETTIER: false
+        VALIDATE_JSON_PRETTIER: false
+        VALIDATE_JSON: false
+        #
+        # TS/TSX delegated to eslint.
+        #
+        VALIDATE_TSX: false
+        VALIDATE_TYPESCRIPT_ES: false
+        # JAVASCRIPT_ES_CONFIG_FILE: eslint.config.mjs
+        VALIDATE_TYPESCRIPT_STANDARD: false
+        # TYPESCRIPT_ES_CONFIG_FILE: eslint.config.mjs
+        VALIDATE_JSCPD: false  # Disable copy-paste detection.
+        VALIDATE_SPELL_CODESPELL: false  # Disable code spell checking.
+        #
+        # Checkov moved to pre-commit.
+        #
+        VALIDATE_CHECKOV: false
+        #
+        # Trivy is disabled for now.
+        #
+        VALIDATE_TRIVY: false
+
+
+  pre-commit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # Absolute path writable by any uid, both under act and on GitHub.
+      PREK_HOME: /tmp/prek
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # prek uses this uv for python hooks.
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with:
+          # Align with the uv-pre-commit rev in .pre-commit-config.yaml.
+          version: "0.10.3"
+          enable-cache: false
+
+      # prek is pinned in the `ci` dependency group of pyproject.toml (hashes in uv.lock).
+      # A venv outside the workspace avoids PEP 668 (externally-managed python, e.g. in act images).
+      - name: Install prek
         env:
-          VALIDATE_MARKDOWN: false
-          # Disabled for conflicts with the isort version used in pre-commit
-          #   you can re-enable it if you align your local isort with
-          #   the one in the super-linter image.
-          VALIDATE_PYTHON_ISORT: false
-          VALIDATE_XML: false
-          VALIDATE_NATURAL_LANGUAGE: false
+          UV_PROJECT_ENVIRONMENT: /tmp/ci-venv
+        run: uv sync --locked --only-group ci
+      - name: Run prek
+        run: /tmp/ci-venv/bin/prek run --all-files
