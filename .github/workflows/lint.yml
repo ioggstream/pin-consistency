@@ -53,6 +53,16 @@ jobs:
         VALIDATE_MARKDOWN: false
         VALIDATE_MARKDOWN_PRETTIER: false
         #
+        # tests/resources holds deliberately broken fixtures (unpinned images,
+        #   `--platform` in FROM, ...) that the test suite expects to fail:
+        #   keep every super-linter linter away from them.
+        #   `^` matches from the repository root only with
+        #   STRIP_DEFAULT_WORKSPACE_FOR_REGEX, which drops the
+        #   /github/workspace prefix before matching.
+        #
+        STRIP_DEFAULT_WORKSPACE_FOR_REGEX: true
+        FILTER_REGEX_EXCLUDE: ^tests/resources/
+        #
         # Python validation is delegated to pre-commit.
         #
         VALIDATE_PYTHON_ISORT: false
