@@ -9,8 +9,8 @@ the same version across the repository.
 1. Add to `.pre-commit-config.yaml`:
 
    ```yaml
-   - repo: <hook-repo-url>
-     rev: <full commit sha> # vX.Y.Z
+   - repo: https://github.com/ioggstream/pin-consistency.git
+     rev: 76b40a5be31fdc46403166dfd977699dc96f3290 # 0.1.0
      hooks:
      - id: pin-consistency
      - id: pin-consistency
